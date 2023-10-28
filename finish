@@ -1,0 +1,16 @@
+#!/bin/sh
+
+# Source the configuration file
+[ -r conf ] && . ./conf
+
+# Ensure the config variable is set
+[ -z "$NO_ZRAM_DEVICES" ] && echo "NO_ZRAM_DEVICES not set." && exit 1
+
+# Loop through each device and turn them off
+for i in $(seq 0 $(($NO_ZRAM_DEVICES - 1))); do
+    swapoff /dev/zram${i}
+    echo 1 > /sys/block/zram${i}/reset
+done
+
+# Unload the zram module
+modprobe -r zram

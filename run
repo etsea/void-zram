@@ -1,0 +1,41 @@
+#!/bin/sh
+
+# Source the configuration file
+[ -r conf ] && . ./conf
+
+# Ensure the config variables are set
+[ -z "$NO_ZRAM_DEVICES" ] && { echo "ERROR: NO_ZRAM_DEVICES not set."; exit 11; }
+[ -z "$TOTAL_ZRAM_GB" ] && { echo "ERROR: TOTAL_ZRAM_GB not set."; exit 12; }
+[ -z "$COMPRESSION" ] && { echo "ERROR: COMPRESSION not set."; exit 13; }
+
+# Load zram module and report error if fails
+if ! modprobe zram num_devices="$NO_ZRAM_DEVICES"; then
+    echo "ERROR: Failed to load the zram module with num_devices=$NO_ZRAM_DEVICES."
+    exit 21
+fi
+
+# Calculate size for each device
+SIZE_PER_DEVICE=$(( TOTAL_ZRAM_GB * 1024 / NO_ZRAM_DEVICES ))M  # /usr/bin/zramctl expects size in M or G. Convert TOTAL_ZRAM_GB to megabytes for more granularity.
+
+# Loop through each device and set them up
+for i in $(seq 0 $(($NO_ZRAM_DEVICES - 1))); do
+    # Setup zram device using /usr/bin/zramctl
+    if ! /usr/bin/zramctl /dev/zram${i} --algorithm "$COMPRESSION" --size $SIZE_PER_DEVICE; then
+        echo "ERROR: Failed to setup /dev/zram${i} using /usr/bin/zramctl."
+        exit 31
+    fi
+
+    # Format the zram device as swap
+    if ! mkswap -U clear /dev/zram${i}; then
+        echo "ERROR: Failed to format /dev/zram${i} as swap."
+        exit 32
+    fi
+
+    # Enable the zram device as swap
+    if ! swapon --priority 100 /dev/zram${i}; then
+        echo "ERROR: Failed to enable swap on /dev/zram${i}."
+        exit 33
+    fi
+done
+
+exec chpst -b zram pause
